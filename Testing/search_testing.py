@@ -1,3 +1,5 @@
+import itertools
+import math
 import pickle
 from _csv import reader
 from collections import Counter
@@ -59,12 +61,51 @@ def search_body(query):
         element is a tuple (wiki_id, title).
     '''
     res = []
+    N = 6348910 # numbers of pages
+    sim = {}
     if len(query) == 0:
         return res
     # BEGIN SOLUTION
+    inverted_index_body = inverted_index_colab.InvertedIndex.read_index('drive/MyDrive/Test_data/body_index', 'index_text')
+    with open('drive/MyDrive/Test_data/doc_info_index/id_title_len_dict.json') as f:
+        dict = json.load(f)
+    word_count_for_queary = Counter(query.split())
+    for word in query.split():
+        #calaulting idf for each word(term)
+        df = inverted_index_body.df[word]
+        idf = math.log10(N/df) ##### might give a condition that if the idf is smaller then a size we continue without checking
+        # print('idf')
+        # print(idf)
+        posting_lst = read_posting_list(inverted_index_body,word, 'drive/MyDrive/Test_data/body_index')
+        for id_tf in posting_lst:
+            # print(type(id_tf))
+            # print(id_tf)
+            # print(type(id_tf[0]))
+            # print(id_tf[0])
+            # print(type(id_tf[1]))
+            # print(id_tf[1])
+            # print(type(dict[str(id_tf[0])][1]))
+            # print(dict[str(id_tf[0])])
+            # print(dict[str(id_tf[0])][0])
+            # print(dict[str(id_tf[0])][1])
+            # print(dict[str(id_tf[0])][2])
+            tfij = id_tf[1]/dict[str(id_tf[0])][1]
+            wij = tfij * math.log10(N/df)
+            if id_tf[0] not in sim:
+                sim[id_tf[0]] = wij*word_count_for_queary[word]
+            else:
+                sim[id_tf[0]] += wij*word_count_for_queary[word]
+            # print(tfij)
+            # break
+    # print(type(sim))
+    # print(sim)
 
+    sim = sorted(sim.items(), key=operator.itemgetter(1), reverse=True)
+    # print(sim)
+    # sim = sim[:100]
     # END SOLUTION
-    return res
+    return sim[:100]
+    # return res
 
 
 def search_title(query):
@@ -198,6 +239,14 @@ def get_pageview(wiki_ids):
     # return (id, page view)
     return res
 
+
+def get_biggest_id():
+    name = 'drive/MyDrive/Test_data/pageviews-202108-user.pkl'
+    with open(name, 'rb') as f:
+        wid2pv = pickle.loads(f.read())
+        for id in range(6348910):
+            if id in wid2pv:
+                print(wid2pv.items())
 
 
 
