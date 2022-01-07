@@ -4,8 +4,11 @@ import pickle
 from _csv import reader
 from collections import Counter
 from pathlib import Path
+from time import time
+
 import wikipedia
 from contextlib import closing
+import hashing
 
 
 from flask import Flask, request, jsonify
@@ -66,9 +69,18 @@ def search_body(query):
     if len(query) == 0:
         return res
     # BEGIN SOLUTION
+    name = 'drive/MyDrive/Test_data/len/'
     inverted_index_body = inverted_index_colab.InvertedIndex.read_index('drive/MyDrive/Test_data/body_index', 'index_text')
-    with open('drive/MyDrive/Test_data/doc_info_index/id_title_len_dict.json') as f:
-        dict = json.load(f)
+    with open(Path('drive/MyDrive/Test_data/id_title_dict.pickle'),  'rb')as  f:
+        id_title_dic = pickle.loads(f.read())
+    # print('trying to open json file of id_len')
+    # t1_start = time()
+    #
+    # with open('drive/MyDrive/Test_data/doc_info_index/id_title_len_dict.json') as f:
+    #     dict = json.load(f)
+    #     duration = time() - t1_start
+    #     print(duration)
+    din = {}
     word_count_for_queary = Counter(query.split())
     for word in query.split():
         #calaulting idf for each word(term)
@@ -77,7 +89,15 @@ def search_body(query):
         # print('idf')
         # print(idf)
         posting_lst = read_posting_list(inverted_index_body,word, 'drive/MyDrive/Test_data/body_index')
+        access_denied = [False for i in range(11)]
+        print('trying to open pickle file of id_len')
+        t1_start = time()
+
         for id_tf in posting_lst:
+            # res.append((id,wid2pv[id]))
+            if not access_denied[hashing.index_hash(id_tf[0])]:
+                din.update(hashing.get_dic(name, 'len.pkl', id_tf[0]))
+                access_denied[hashing.index_hash(id_tf[0])] = True
             # print(type(id_tf))
             # print(id_tf)
             # print(type(id_tf[0]))
@@ -89,22 +109,32 @@ def search_body(query):
             # print(dict[str(id_tf[0])][0])
             # print(dict[str(id_tf[0])][1])
             # print(dict[str(id_tf[0])][2])
-            tfij = id_tf[1]/dict[str(id_tf[0])][1]
+            tfij = id_tf[1]/din[id_tf[0]] ######look out in here
             wij = tfij * math.log10(N/df)
             if id_tf[0] not in sim:
                 sim[id_tf[0]] = wij*word_count_for_queary[word]
+                # res.append((id_tf[0],))
             else:
                 sim[id_tf[0]] += wij*word_count_for_queary[word]
             # print(tfij)
             # break
     # print(type(sim))
     # print(sim)
-
+        duration = time() - t1_start
+        print(duration)
     sim = sorted(sim.items(), key=operator.itemgetter(1), reverse=True)
+
     # print(sim)
     # sim = sim[:100]
     # END SOLUTION
-    return sim[:100]
+    print('starting to append')
+    t1_start = time()
+    for id in sim[:100]:
+        res.append((id[0],id_title_dic[id[0]]))
+    duration = time() - t1_start
+    print(duration)
+    print(sim[:100])
+    return res
     # return res
 
 
@@ -130,11 +160,15 @@ def search_title(query):
 
     post_list = get_posting_list(query, 'index_title', dir='drive/MyDrive/Test_data/title_index')
     # each element is (id,tf) and we want it to be --> (id,title)
-    res = list(map(lambda x: tuple((x[0], wikipedia.page(pageid=x[0], auto_suggest=True, redirect=True).title)),post_list))
+    id_title_dic = {}
+    with open(Path('drive/MyDrive/Test_data/id_title_dict.pickle'),  'rb')as  f:
+        id_title_dic = pickle.loads(f.read())
+    # res = list(map(lambda x: tuple((x[0], wikipedia.page(pageid=x[0], auto_suggest=True, redirect=True).title)),post_list))
+    res = map(lambda x: tuple((x[0], id_title_dic[x[0]])), post_list)
+    res = list(res)
 
     # END SOLUTION
     return res
-
 
 def search_anchor(query):
     ''' Returns ALL (not just top 100) search results that contain A QUERY WORD
@@ -160,9 +194,17 @@ def search_anchor(query):
 
     post_list = get_posting_list(query, 'index_anchor', dir='drive/MyDrive/Test_data/anchor_index')
     # each element is (id,tf) and we want it to be --> (id,title)
-    res = list(map(lambda x: tuple((x[0], wikipedia.page(pageid=x[0], auto_suggest=True, redirect=True).title)),post_list))
+    # res = list(map(lambda x: tuple((x[0], wikipedia.page(pageid=x[0], auto_suggest=True, redirect=True).title)),post_list))
     #res = list(map(lambda x: tuple((x[0], wikiId2title_name(x[0]))),post_list))
-
+    id_title_dic = {}
+    with open(Path('drive/MyDrive/Test_data/id_title_dict.pickle'),'rb')as f:
+        id_title_dic = pickle.loads(f.read())
+    # res = list(map(lambda x: tuple((x[0], wikipedia.page(pageid=x[0], auto_suggest=True, redirect=True).title)),post_list))
+    # res = list(map(lambda x: tuple((x[0], id_title_dic[x[0]])), post_list))
+    res = map(lambda x: tuple((x[0], id_title_dic[x[0]])), post_list)
+    res = list(res)
+    # END SOLUTION
+    return res
     # END SOLUTION
 
     return res
@@ -182,30 +224,42 @@ def get_pagerank(wiki_ids):
           list of PageRank scores that correrspond to the provided article IDs.
     '''
     res = []
-    dic_helper =Counter()
+    rank ={}
     if len(wiki_ids) == 0:
         return res
-    name = 'drive/MyDrive/Test_data/pr_part_ass3.csv.gz'
-    # df = pd.read_csv(name, compression='gzip', header=0, sep=' ', quotechar='"',error_bad_lines=False)
-    # print(df)
+    # name = 'drive/MyDrive/Test_data/id_rank_dict.pickle'
+    name = 'drive/MyDrive/Test_data/pr/' ####need to get this shit smaller
+    access_denied = [False for i in range(11)]
+    t1_start = time()
+    print('trying to open')
+    # with open('drive/MyDrive/Test_data/pageviews-202108-user.pkl', 'rb') as f:
+    #     wid2pv = pickle.loads(f.read())
+    #     all_keys = wid2pv.values()
+    #     print('max view')
+    #     max_val = max(all_keys)
+    #     print(max_val)
+    #     # print(wid2pv[34258])
+    #     duration = time() - t1_start
+    #     print(duration)
 
-    with gzip.open(name, 'rt') as read_obj:
-        # pass the file object to reader() to get the reader object
-        csv_reader = reader(read_obj)
-        # Iterate over each row in the csv using reader object
-        for row in csv_reader:
-            # row variable is a list that represents a row in csv
-            #print(row)
-            # dic_helper[int(row[0])] = float(row[1])
-            dic_helper[int(row[0])] = row[1]
-        for id in wiki_ids:
-            res.append((id,float(dic_helper[id]))) ###### need to change it only to the flaot without the id
-
-    # BEGIN SOLUTION
-
-
+    for id in wiki_ids:
+        # res.append((id,wid2pv[id]))
+        if not access_denied[hashing.index_hash(id)]:
+            rank.update(hashing.get_dic(name , 'pr.pkl',id))
+            access_denied[hashing.index_hash(id)] = True
+    duration = time() - t1_start
+    print(duration)
+    t1_start = time()
+    print('trying to append')
+    for id in wiki_ids:
+        res.append((id,rank[id])) ###### need to change it only to the int without the id
+        #print(wid2pv[34258])
+    duration = time() - t1_start
+    print(duration)
+    # res = sorted(list(map(lambda x: (x,view[x]),wiki_ids)),key=lambda x:x[1] ,reverse=True)
+    # res = list(map(lambda x: (x,view[x]),wiki_ids))
     # END SOLUTION
-    # return (id, page rank)
+    # return (id, page view)
     return res
 
 
@@ -229,12 +283,37 @@ def get_pageview(wiki_ids):
     if len(wiki_ids) == 0:
         return res
     # BEGIN SOLUTION
-    name = 'drive/MyDrive/Test_data/pageviews-202108-user.pkl'
-    with open(name, 'rb') as f:
-        wid2pv = pickle.loads(f.read())
-        for id in wiki_ids:
-            res.append((id,wid2pv[id])) ###### need to change it only to the int without the id
+    view = {}
+    name = 'drive/MyDrive/Test_data/pv/' ####need to get this shit smaller
+    access_denied = [False for i in range(11)]
+    t1_start = time()
+    print('trying to open')
+    # with open('drive/MyDrive/Test_data/pageviews-202108-user.pkl', 'rb') as f:
+    #     wid2pv = pickle.loads(f.read())
+    #     all_keys = wid2pv.values()
+    #     print('max view')
+    #     max_val = max(all_keys)
+    #     print(max_val)
+    #     # print(wid2pv[34258])
+    #     duration = time() - t1_start
+    #     print(duration)
+
+    for id in wiki_ids:
+        # res.append((id,wid2pv[id]))
+        if not access_denied[hashing.index_hash(id)]:
+            view.update(hashing.get_dic(name , 'pv.pkl',id))
+            access_denied[hashing.index_hash(id)] = True
+    duration = time() - t1_start
+    print(duration)
+    t1_start = time()
+    print('trying to append')
+    for id in wiki_ids:
+        res.append((id,view[id])) ###### need to change it only to the int without the id
         #print(wid2pv[34258])
+    duration = time() - t1_start
+    print(duration)
+    # res = sorted(list(map(lambda x: (x,view[x]),wiki_ids)),key=lambda x:x[1] ,reverse=True)
+    # res = list(map(lambda x: (x,view[x]),wiki_ids))
     # END SOLUTION
     # return (id, page view)
     return res
@@ -242,11 +321,15 @@ def get_pageview(wiki_ids):
 
 def get_biggest_id():
     name = 'drive/MyDrive/Test_data/pageviews-202108-user.pkl'
-    with open(name, 'rb') as f:
-        wid2pv = pickle.loads(f.read())
-        for id in range(6348910):
-            if id in wid2pv:
-                print(wid2pv.items())
+    x = []
+    with open('drive/MyDrive/Test_data/doc_info_index/id_title_len_dict.json') as f:
+        dict = json.load(f)
+
+        #print(wid2pv)
+        for id in dict:
+            # print(id)
+            x.append(id)
+    return x[:10]
 
 
 
