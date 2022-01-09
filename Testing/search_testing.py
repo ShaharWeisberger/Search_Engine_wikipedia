@@ -44,9 +44,85 @@ def search(query):
     if len(query) == 0:
         return res
     # BEGIN SOLUTION
+    title_weight = 1;
+    anchor_weight = 1;
+    body_weight = 1;
+    view_weight = 1;
+    rank_weight = 1;
+
+    title = search_title(query)
+    print(title)
+    norm_title = normaliziation_func(title, query, title_weight)
+    print('normalization for title')
+    print(norm_title)
+
+    anchor = search_anchor(query)
+    norm_anchor = normaliziation_func(anchor, query, anchor_weight)
+    print(anchor)
+    print('normalization for anchor')
+    print(norm_anchor)
+    body = search_body_not_for_real(query,body_weight)
+    norm_body = []
+
+    print(body)
+
+    ids = []
+    for id in norm_title:
+        ids.append(id[0])
+
+    view_lst = pv_for_life(ids,view_weight)
+    print('view list')
+    print(view_lst)
+    rank_lst = pr_for_life(ids,rank_weight)
+
+
+    print('rank list')
+    print(rank_lst)
+
+
+    final = {}
+    final = update_final_search_dic(final, norm_title)
+    final = update_final_search_dic(final, norm_body)
+    final = update_final_search_dic(final, norm_anchor)
+    final = update_final_search_dic(final, view_lst)
+    final = update_final_search_dic(final, rank_lst)
+    # for page in norm_title:
+    #     if page[0] not in final:
+    #         final[page[0]] = page[1]
+    #     else:
+    #         final[page[0]] += page[1]
+    #
+    # for page in norm_body:
+    #     if page[0] not in final:
+    #         final[page[0]] = page[1]
+    #     else:
+    #         final[page[0]] += page[1]
+    #
+    # for page in norm_anchor:
+    #     if page[0] not in final:
+    #         final[page[0]] = page[1]
+    #     else:
+    #         final[page[0]] += page[1]
+    #
+    # for page in view_lst:
+    #     if page[0] not in final:
+    #         final[page[0]] = page[1]
+    #     else:
+    #         final[page[0]] += page[1]
+    #
+    # for page in rank_lst:
+    #     if page[0] not in final:
+    #         final[page[0]] = page[1]
+    #     else:
+    #         final[page[0]] += page[1]
+
+    final = sorted(final.items(), key=operator.itemgetter(1), reverse=True)
+
+    res = final[:100]
 
     # END SOLUTION
     return res
+
 
 
 def search_body(query):
@@ -71,7 +147,7 @@ def search_body(query):
     # BEGIN SOLUTION
     name = 'drive/MyDrive/Test_data/len/'
     inverted_index_body = inverted_index_colab.InvertedIndex.read_index('drive/MyDrive/Test_data/body_index', 'index_text')
-    with open(Path('drive/MyDrive/Test_data/id_title_dict.pickle'),  'rb')as  f:
+    with open(Path('drive/MyDrive/Test_data/id_title_dict.pickle'), 'rb')as f:
         id_title_dic = pickle.loads(f.read())
     # print('trying to open json file of id_len')
     # t1_start = time()
@@ -244,7 +320,7 @@ def get_pagerank(wiki_ids):
 
     for id in wiki_ids:
         # res.append((id,wid2pv[id]))
-        if not access_denied[hashing.index_hash(id)]:
+        if access_denied[hashing.index_hash(id)] == False:
             rank.update(hashing.get_dic(name , 'pr.pkl',id))
             access_denied[hashing.index_hash(id)] = True
     duration = time() - t1_start
@@ -252,8 +328,9 @@ def get_pagerank(wiki_ids):
     t1_start = time()
     print('trying to append')
     for id in wiki_ids:
-        res.append((id,rank[id])) ###### need to change it only to the int without the id
+        res.append(rank[id]) ###### need to change it only to the int without the id
         #print(wid2pv[34258])
+    res.sort(key=lambda x: x[1], reverse=True)
     duration = time() - t1_start
     print(duration)
     # res = sorted(list(map(lambda x: (x,view[x]),wiki_ids)),key=lambda x:x[1] ,reverse=True)
@@ -300,15 +377,15 @@ def get_pageview(wiki_ids):
 
     for id in wiki_ids:
         # res.append((id,wid2pv[id]))
-        if not access_denied[hashing.index_hash(id)]:
-            view.update(hashing.get_dic(name , 'pv.pkl',id))
+        if access_denied[hashing.index_hash(id)] == False:
+            view.update(hashing.get_dic(name, 'pv.pkl', id))
             access_denied[hashing.index_hash(id)] = True
     duration = time() - t1_start
     print(duration)
     t1_start = time()
     print('trying to append')
     for id in wiki_ids:
-        res.append((id,view[id])) ###### need to change it only to the int without the id
+        res.append(view[id]) ###### need to change it only to the int without the id
         #print(wid2pv[34258])
     duration = time() - t1_start
     print(duration)
@@ -397,3 +474,182 @@ def read_posting_list(inverted, w, base_dir=''):
         except:
             return []
 
+
+
+def normaliziation_func(lst_to_norm , query , weight):
+    res = []
+    for id in lst_to_norm:
+        num = 0
+        for word in id[1].split():
+            for q in query.split():
+                if q == word.lower():
+                    num += 1
+        res.append((id[0], weight*(num/len(id[1].split()))))
+
+    return res
+
+
+def search_body_not_for_real(query, body_weight):
+    res = []
+    N = 6348910  # numbers of pages
+    sim = {}
+    if len(query) == 0:
+        return res
+    # BEGIN SOLUTION
+    name = 'drive/MyDrive/Test_data/len/'
+    inverted_index_body = inverted_index_colab.InvertedIndex.read_index('drive/MyDrive/Test_data/body_index','index_text')
+
+    # with open(Path('drive/MyDrive/Test_data/id_title_dict.pickle'), 'rb') as f:
+    #     id_title_dic = pickle.loads(f.read())
+
+    din = {}
+    word_count_for_queary = Counter(query.split())
+    for word in query.split():
+        # calaulting idf for each word(term)
+        df = inverted_index_body.df[word]
+        idf = math.log10(
+            N / df)  ##### might give a condition that if the idf is smaller then a size we continue without checking
+        # print('idf')
+        # print(idf)
+        posting_lst = read_posting_list(inverted_index_body, word, 'drive/MyDrive/Test_data/body_index')
+        access_denied = [False for i in range(11)]
+        print('trying to open pickle file of id_len')
+        t1_start = time()
+
+        for id_tf in posting_lst:
+            if not access_denied[hashing.index_hash(id_tf[0])]:
+                din.update(hashing.get_dic(name, 'len.pkl', id_tf[0]))
+                access_denied[hashing.index_hash(id_tf[0])] = True
+
+            tfij = id_tf[1] / din[id_tf[0]]  ######look out in here
+            wij = tfij * math.log10(N / df)
+            if id_tf[0] not in sim:
+                sim[id_tf[0]] = wij * word_count_for_queary[word]
+            else:
+                sim[id_tf[0]] += wij * word_count_for_queary[word]
+
+        duration = time() - t1_start
+        print(duration)
+    sim = sorted(sim.items(), key=operator.itemgetter(1), reverse=True)
+    sim = sim[:100]
+    biggest_sim = sim[0][1]
+    for id in sim:
+        res.append((id[0], body_weight*(id[1]/biggest_sim)))
+    return res
+
+
+def pv_for_life(wiki_ids ,view_weight):
+    ''' Returns the number of page views that each of the provide wiki articles
+        had in August 2021.
+        Test this by issuing a POST request to a URL like:
+          http://YOUR_SERVER_DOMAIN/get_pageview
+        with a json payload of the list of article ids. In python do:
+          import requests
+          requests.post('http://YOUR_SERVER_DOMAIN/get_pageview', json=[1,5,8])
+        As before YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
+        if you're using ngrok on Colab or your external IP on GCP.
+    Returns:
+    --------
+        list of tuples: (id , view_numbers)
+          list of page view numbers from August 2021 that correrspond to the
+    '''
+    res = []
+    if len(wiki_ids) == 0:
+        return res
+    # BEGIN SOLUTION
+    view = {}
+    name = 'drive/MyDrive/Test_data/pv/' ####need to get this shit smaller
+    access_denied = [False for i in range(11)]
+    t1_start = time()
+    print('trying to open')
+    # with open('drive/MyDrive/Test_data/pageviews-202108-user.pkl', 'rb') as f:
+    #     wid2pv = pickle.loads(f.read())
+    #     all_keys = wid2pv.values()
+    #     print('max view')
+    #     max_val = max(all_keys)
+    #     print(max_val)
+    #     # print(wid2pv[34258])
+    #     duration = time() - t1_start
+    #     print(duration)
+
+    for id in wiki_ids:
+        # res.append((id,wid2pv[id]))
+        if access_denied[hashing.index_hash(id)] == False:
+            view.update(hashing.get_dic(name, 'pv.pkl', id))
+            access_denied[hashing.index_hash(id)] = True
+    duration = time() - t1_start
+    print(duration)
+    t1_start = time()
+    print('trying to append')
+    for id in wiki_ids:
+        res.append((id,view[id])) ###### need to change it only to the int without the id
+        #print(wid2pv[34258])
+    duration = time() - t1_start
+    print(duration)
+    # res = sorted(list(map(lambda x: (x,view[x]),wiki_ids)),key=lambda x:x[1] ,reverse=True)
+    # res = list(map(lambda x: (x,view[x]),wiki_ids))
+    # END SOLUTION
+    # return (id, page view)
+    res.sort(key=lambda x: x[1], reverse=True)
+    biggest_view = res[0][1]
+    new_res = []
+    for fix in res:
+        new_res.append((fix[0], view_weight*(fix[1]/biggest_view)))
+    return new_res
+
+
+def pr_for_life(wiki_ids ,rank_weight):
+    res = []
+    rank ={}
+    if len(wiki_ids) == 0:
+        return res
+    # name = 'drive/MyDrive/Test_data/id_rank_dict.pickle'
+    name = 'drive/MyDrive/Test_data/pr/' ####need to get this shit smaller
+    access_denied = [False for i in range(11)]
+    t1_start = time()
+    print('trying to open')
+    # with open('drive/MyDrive/Test_data/pageviews-202108-user.pkl', 'rb') as f:
+    #     wid2pv = pickle.loads(f.read())
+    #     all_keys = wid2pv.values()
+    #     print('max view')
+    #     max_val = max(all_keys)
+    #     print(max_val)
+    #     # print(wid2pv[34258])
+    #     duration = time() - t1_start
+    #     print(duration)
+
+    for id in wiki_ids:
+        # res.append((id,wid2pv[id]))
+        if access_denied[hashing.index_hash(id)] == False:
+            rank.update(hashing.get_dic(name , 'pr.pkl',id))
+            access_denied[hashing.index_hash(id)] = True
+    duration = time() - t1_start
+    print(duration)
+    t1_start = time()
+    print('trying to append')
+    for id in wiki_ids:
+        res.append((id,rank[id])) ###### need to change it only to the int without the id
+        #print(wid2pv[34258])
+    # res.sort(key=lambda x: x[1], reverse=True)
+    duration = time() - t1_start
+    print(duration)
+    # res = sorted(list(map(lambda x: (x,view[x]),wiki_ids)),key=lambda x:x[1] ,reverse=True)
+    # res = list(map(lambda x: (x,view[x]),wiki_ids))
+    # END SOLUTION
+    # return (id, page view)
+    res.sort(key=lambda x: x[1], reverse=True)
+    biggest_rank = res[0][1]
+    new_res = []
+    for fix in res:
+        new_res.append((fix[0], rank_weight*(fix[1]/biggest_rank)))
+
+    return new_res
+
+
+def update_final_search_dic(final, megazord):
+    for page in megazord:
+        if page[0] not in final:
+            final[page[0]] = page[1]
+        else:
+            final[page[0]] += page[1]
+    return final

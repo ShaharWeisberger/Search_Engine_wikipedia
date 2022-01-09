@@ -23,11 +23,12 @@ def write_as_Counter(id_val , base_dir , name):
     dic = {}
     for id, val in id_val:
         if index_hash(id) > our_current_index:
-            # we will dump the file into
+            # we will dump the file into its place
             with open(Path(base_dir + name + str(our_current_index)) ,'wb') as f:
                 pickle.dump(dic, f)
 
             our_current_index = index_hash(id)
+            # creating a new dic
             dic = {}
             dic[id] = val
         else:
