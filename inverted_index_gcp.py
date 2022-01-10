@@ -1,18 +1,18 @@
-import pyspark
-import sys
+# import pyspark
+# import sys
 from collections import Counter, OrderedDict
 import itertools
-from itertools import islice, count, groupby
-import pandas as pd
-import os
-import re
-from operator import itemgetter
-from time import time
+# from itertools import islice, count, groupby
+# import pandas as pd
+# import os
+# import re
+# from operator import itemgetter
+# from time import time
 from pathlib import Path
 import pickle
 from google.cloud import storage
-from collections import defaultdict
-from contextlib import closing
+# from collections import defaultdict
+# from contextlib import closing
 
 
 # Let's start with a small block size of 30 bytes just to test things out. 
@@ -182,8 +182,7 @@ class InvertedIndex:
         posting_locs = defaultdict(list)
         bucket_id, list_w_pl = b_w_pl
         
-        with closing(MultiFileWriter(
-                ".", bucket_id, bucket_name)) as writer:
+        with closing(MultiFileWriter(".", bucket_id, bucket_name)) as writer:
             for w, pl in list_w_pl: 
                 # convert to bytes
                 b = b''.join([(doc_id << 16 | (tf & TF_MASK)).to_bytes(TUPLE_SIZE, 'big')
