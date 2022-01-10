@@ -1,55 +1,41 @@
 import nltk as nltk
-from flask import Flask, request, jsonify
-import requests
-import bs4
-from bs4 import BeautifulSoup
-from contextlib import closing
+# from flask import Flask, request, jsonify
+# import requests
+# import bs4
+# from bs4 import BeautifulSoup
+# from contextlib import closing
 # import inverted_index_colab
-import operator
-import itertools
+# import operator
+# import itertools
 import math
 import pickle
 from _csv import reader
 from collections import Counter
 from pathlib import Path
-from time import time
+# from time import time
 
-from contextlib import closing
-nltk.download('stopwords')
-import os
+# from contextlib import closing
+# import os
 import re
 
 from flask import Flask, request, jsonify
-import requests
-import bs4
-from bs4 import BeautifulSoup
+# import requests
 from contextlib import closing
-import inverted_index_colab
+#
+#
+import inverted_index_gcp
 import operator
-import gzip
-import csv
-import json
-import pandas as pd
-import hashing
+# import gzip
+# import csv
+# import json
+# import pandas as pd
 from nltk.corpus import stopwords
+nltk.download('stopwords')
+
 
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
-
-
-        self.index_title = inverted_index_colab.InvertedIndex.read_index('/content/title_index','index_title')
-        self.index_anchor = inverted_index_colab.InvertedIndex.read_index('/content/anchor_index','index_anchor')
-        self.index_body = inverted_index_colab.InvertedIndex.read_index('/content/body_index', 'index_text')
-
-        self.id_title = {}
-        self.id_PageView = {}
-        self.id_PageRank = {}
-        self.id_PageLength = {}
-
-
-
-
 
 
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
@@ -58,20 +44,28 @@ class MyFlaskApp(Flask):
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
-with open(Path('/content/id_title_dict.pickle'), 'rb') as f:
+
+global index_title
+index_title= inverted_index_gcp.InvertedIndex.read_index('title', 'title_index')
+global index_anchor
+index_anchor= inverted_index_gcp.InvertedIndex.read_index('anchor', 'anchor_index')
+global index_body
+index_body= inverted_index_gcp.InvertedIndex.read_index('postings_gcp', 'index')
+
+with open(Path('id_title_dict.pickle'), 'rb') as f:
     global id_title
     id_title = pickle.loads(f.read())
 
 
-with open(Path('/content/id_len_dict.pickle'), 'rb') as f:
+with open(Path('id_len_dict.pickle'), 'rb') as f:
     global id_len
     id_len = pickle.loads(f.read())
 
-with open(Path('/content/pageviews-202108-user.pkl'), 'rb') as f:
+with open(Path('pageviews-202108-user.pkl'), 'rb') as f:
     global id_view
     id_view = pickle.loads(f.read())
 
-with open(Path('/content/id_rank_dict.pickle'), 'rb') as f:
+with open(Path('id_rank_dict.pickle'), 'rb') as f:
     global id_rank
     id_rank = pickle.loads(f.read())
 
@@ -102,23 +96,25 @@ def search():
 
 
     query = tokenize(query)
-    title_weight = 1;
-    anchor_weight = 1;
-    body_weight = 1;
-    view_weight = 1;
-    rank_weight = 1;
+    title_weight = 2;
+    anchor_weight = 1.2;
+    body_weight = 0.6;
+    view_weight = 1.3;
+    rank_weight = 1.8;
 
     title = search_title_not_for_real(query)
     norm_title = normaliziation_func(title, query, title_weight)
     anchor = search_anchor_not_for_real(query)
     norm_anchor = normaliziation_func(anchor, query, anchor_weight)
 
-    body = search_body_not_for_real(query,body_weight)
+    body_sim = search_body_not_for_real(query,body_weight)
+    body_25 = search_body_25(query, 1.4*body_weight)
 
 
     ids = []
-    for id in norm_title:
-        ids.append(id[0])
+    if (len(norm_title)!= 0):
+        for id in norm_title:
+            ids.append(id[0])
 
     view_lst = pv_for_life(ids,view_weight)
 
@@ -128,18 +124,19 @@ def search():
 
     final = {}
     final = update_final_search_dic(final, norm_title)
-    final = update_final_search_dic(final, body) # OK WTF?!?!?! lets start with printing...
+    final = update_final_search_dic(final, body_sim)
+    final = update_final_search_dic(final, body_25)
     final = update_final_search_dic(final, norm_anchor)
     final = update_final_search_dic(final, view_lst)
     final = update_final_search_dic(final, rank_lst)
 
     final = sorted(final.items(), key=operator.itemgetter(1), reverse=True)
-    # print(final)
     not_res = final[:100]
-    # with open(Path('/content/id_title_dict.pickle'), 'rb')as f:
-    #    app.id_title = pickle.loads(f.read())
     for id in not_res:
-         res.append((id[0], id_title[id[0]]))
+        try:
+            res.append((id[0], id_title[id[0]]))
+        except:
+            pass
 
 
     # END SOLUTIONS
@@ -172,40 +169,40 @@ def search_body():
     N = 6348910 # numbers of pages
     sim = {}
 
-    # name = 'drive/MyDrive/Test_data/len/'
-    # inverted_index_body = inverted_index_colab.InvertedIndex.read_index('/content/body_index', 'index_text')
-    # with open(Path('/content/id_title_dict.pickle'), 'rb')as f:
-    #    app.id_title = pickle.loads(f.read())
+
 
     # din = {}
     word_count_for_queary = Counter(query)
     for word in query:
         #calaulting idf for each word(term)
-        df = app.index_body.df[word]
+        # df = app.index_body.df[word]
+        df = index_body.df[word]
         idf = math.log10(N/df) ##### might give a condition that if the idf is smaller then a size we continue without checking
 
-        posting_lst = read_posting_list(app.index_body,word, '/content/body_index')
+        posting_lst = read_posting_list(index_body, word, 'postings_gcp')
         access_denied = [False for i in range(11)]
 
         for id_tf in posting_lst:
-        #     if not access_denied[hashing.index_hash(id_tf[0])]:
-        #         app.id_PageLength.update(hashing.get_dic('/content/len/', 'len.pkl', id_tf[0]))
-        #         access_denied[hashing.index_hash(id_tf[0])] = True
 
-            tfij = id_tf[1]/id_len[id_tf[0]] ######look out in here
-            wij = tfij * math.log10(N/df)
-            if id_tf[0] not in sim:
-                sim[id_tf[0]] = wij*word_count_for_queary[word]
-            else:
-                sim[id_tf[0]] += wij*word_count_for_queary[word]
+            try:
+                tfij = id_tf[1]/id_len[id_tf[0]] ######look out in here
+                wij = tfij * math.log10(N/df)
+                if id_tf[0] not in sim:
+                    sim[id_tf[0]] = wij*word_count_for_queary[word]
+                else:
+                    sim[id_tf[0]] += wij*word_count_for_queary[word]
+            except:
+                pass
 
     sim = sorted(sim.items(), key=operator.itemgetter(1), reverse=True)
 
     for id in sim[:100]:
-        res.append((id[0], id_title[id[0]]))
+        try:
+            res.append((id[0], id_title[id[0]]))
+        except:
+            continue
     # END SOLUTION
-        # app.id_title.clear()
-        # app.id_PageLength.clear()
+
     return jsonify(res)
 
 
@@ -237,16 +234,21 @@ def search_title():
 
     # BEGIN SOLUTION
     query = tokenize(query)
-    # post_list = get_posting_list(query, 'index_title', dir='drive/MyDrive/Test_data/title_index')
-    post_list = get_posting_list(query, app.index_title, dir='/content/title_index')
-    # id_title_dic = {}
-    # with open(Path('/content/id_title_dict.pickle'), 'rb')as f:
-    #    app.id_title = pickle.loads(f.read())
-    res = map(lambda x: tuple((x[0], id_title[x[0]])), post_list)
-    res = list(res)
 
-    # END SOLUTION
-        # app.id_title.clear()
+    post_list = get_posting_list(query, index_title, 'title')
+
+    try:
+        res = map(lambda x: tuple((x[0], id_title[x[0]])), post_list)
+        res = list(res)
+    except:
+        diffrent_res=[]
+        for id in post_list:
+            try:
+                diffrent_res.append((id[0],id_title[id[0]]))
+            except:
+                pass
+        res = diffrent_res
+
     return jsonify(res)
 
 
@@ -276,17 +278,25 @@ def search_anchor():
     # BEGIN SOLUTION
 
     query = tokenize(query)
-    post_list = get_posting_list(query, app.index_anchor, dir='/content/anchor_index')
+    # post_list = get_posting_list(query, app.index_anchor, dir='anchor')
+    post_list = get_posting_list(query, index_anchor, dir='anchor')
 
-    id_title_dic = {}
-    # with open(Path('/content/id_title_dict.pickle'), 'rb')as f:
-    #    app.id_title = pickle.loads(f.read())
 
-    res = map(lambda x: tuple((x[0], id_title[x[0]])), post_list)
-    res = list(res)
+
+    try:
+        res = map(lambda x: tuple((x[0], id_title[x[0]])), post_list)
+        res = list(res)
+    except:
+        diffrent_res=[]
+        for id in post_list:
+            try:
+                diffrent_res.append((id[0],id_title[id[0]]))
+            except:
+                pass
+        res = diffrent_res
 
     # END SOLUTION
-        # app.id_title.clear()
+
     return jsonify(res)
 
 
@@ -307,28 +317,23 @@ def get_pagerank():
           list of PageRank scores that correrspond to the provided article IDs.
     '''
     res = []
-    print('page rankingggggggg')
+    # print('page rankingggggggg')
     wiki_ids = request.get_json() ######
     if len(wiki_ids) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-    access_denied = [False for i in range(11)]
 
-    # with open('drive/MyDrive/Test_data/pageviews-202108-user.pkl', 'rb') as f:
-    #     wid2pv = pickle.loads(f.read())
-
-
-    # for id in wiki_ids:
-    #     if access_denied[hashing.index_hash(id)] == False:
-    #         app.id_PageRank.update(hashing.get_dic('/content/pr/', 'pr.pkl', id))
-    #         access_denied[hashing.index_hash(id)] = True
 
     for id in wiki_ids:
-        res.append(id_rank[id])  ###### need to change it only to the int without the id
-    res.sort(key=lambda x: x[1], reverse=True)
+        try:
+            res.append(id_rank[id])  ###### need to change it only to the int without the id
+        except:
+            pass
+    if len(res!=0):
+        res.sort(key=lambda x: x[1], reverse=True)
 
     # END SOLUTION
-        # app.id_PageRank.clear()
+
     return jsonify(res)
 
 
@@ -356,23 +361,18 @@ def get_pageview():
     if len(wiki_ids) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-    view = {}
-    name = 'drive/MyDrive/Test_data/pv/' ####need to get this shit smaller
-    access_denied = [False for i in range(11)]
 
 
 
-    # for id in wiki_ids:
-    #     # res.append((id,wid2pv[id]))
-    #     if access_denied[hashing.index_hash(id)] == False:
-    #         app.id_PageView.update(hashing.get_dic('/content/pv/', 'pv.pkl', id))
-    #         access_denied[hashing.index_hash(id)] = True
 
     for id in wiki_ids:
-        res.append(id_view[id]) ###### need to change it only to the int without the id
+        try:
+            res.append(id_view[id]) ###### need to change it only to the int without the id
+        except:
+            pass
+
 
     # END SOLUTION
-        # app.id_PageView.clear()
         return jsonify(res)
 
 
@@ -380,14 +380,15 @@ def get_pageview():
 
 
 def get_posting_list(q, inverted, dir=''): ####WOWOWOWOWOWOWOWOWOWOWOWOWOWOWOWOWOW
-    # inverted = inverted_index_colab.InvertedIndex.read_index(dir, name)
 
     dic = {}
     p_lists = []
-    # we want to get posting list for every word in the query
+
     split_query = q
     for i in split_query:
+
         posting_list = read_posting_list(inverted, i, dir)
+
         p_lists += posting_list
 
     # putting it in a dict for fast access and mearge results so we wont have duplicates.
@@ -397,9 +398,7 @@ def get_posting_list(q, inverted, dir=''): ####WOWOWOWOWOWOWOWOWOWOWOWOWOWOWOWOW
         else:
             dic[j[0]] += j[1]
 
-    # res = Counter()
-    # for pair in p_lists:
-    #     res[pair[0]] += pair[1]
+
 
     dic = dict(sorted(dic.items(), key=operator.itemgetter(1), reverse=True))
 
@@ -411,7 +410,7 @@ TF_MASK = 2 ** 16 - 1  # Masking the 16 low bits of an integer
 
 
 def read_posting_list(inverted, w, dir=''):
-    with closing(inverted_index_colab.MultiFileReader()) as reader:
+    with closing(inverted_index_gcp.MultiFileReader()) as reader:
         try:
             locs = inverted.posting_locs[w]
             real_locs = [tuple((dir + '/' + locs[0][0], locs[0][1]))]
@@ -434,12 +433,21 @@ def tokenize(query):
 
     all_stopwords = english_stopwords.union(corpus_stopwords)
     RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
+
     tokens = [token.group() for token in RE_WORD.finditer(query.lower())]
     return [token for token in tokens if token not in all_stopwords]
 
-
+#####
 
 def normaliziation_func(lst_to_norm , query , weight):
+    """
+    normaliziation func for anchor and title.
+    :param lst_to_norm:
+    :param query:
+    :param weight:
+    :return: a list of tuple (id,number) the number is the rank this function gives to the id
+    based on the weight and the function.
+    """
     res = []
     for id in lst_to_norm:
         num = 0
@@ -453,41 +461,40 @@ def normaliziation_func(lst_to_norm , query , weight):
 
 
 def search_body_not_for_real(query, body_weight):
+    """
+    does the same as search_body but every page is between 1-0 based on the page with the biggest
+    comsim.
+    :param query:
+    :param body_weight:
+    :return:
+    """
     res = []
     N = 6348910  # numbers of pages
     sim = {}
     if len(query) == 0:
         return res
     # BEGIN SOLUTION
-    name = '/content/len/'
-    # inverted_index_body = inverted_index_colab.InvertedIndex.read_index('drive/MyDrive/Test_data/body_index','index_text')
 
-    # with open(Path('drive/MyDrive/Test_data/id_title_dict.pickle'), 'rb') as f:
-    #     id_title_dic = pickle.loads(f.read())
 
-    din = {}
     word_count_for_queary = Counter(query)
     for word in query:
-        # calaulting idf for each word(term)
-        df = app.index_body.df[word]
-        idf = math.log10(N / df)
-              ##### might give a condition that if the idf is smaller then a size we continue without checking
 
-        posting_lst = read_posting_list(app.index_body, word, '/content/body_index')
-        access_denied = [False for i in range(11)]
+        df = index_body.df[word]
+        idf = math.log10(N / df)
+
+        posting_lst = read_posting_list(index_body, word, 'postings_gcp')
 
         for id_tf in posting_lst:
-            # if not access_denied[hashing.index_hash(id_tf[0])]:
-            #     din.update(hashing.get_dic(name, 'len.pkl', id_tf[0]))
-            #     access_denied[hashing.index_hash(id_tf[0])] = True
 
-            tfij = id_tf[1] / id_len[id_tf[0]]  ######look out in here
-            wij = tfij * math.log10(N / df)
-            if id_tf[0] not in sim:
-                sim[id_tf[0]] = wij * word_count_for_queary[word]
-                # res.append((id_tf[0],))
-            else:
-                sim[id_tf[0]] += wij * word_count_for_queary[word]
+            try:
+                tfij = id_tf[1] / id_len[id_tf[0]]  ######look out in here
+                wij = tfij * math.log10(N / df)
+                if id_tf[0] not in sim:
+                    sim[id_tf[0]] = wij * word_count_for_queary[word]
+                else:
+                    sim[id_tf[0]] += wij * word_count_for_queary[word]
+            except:
+                pass
 
     sim = sorted(sim.items(), key=operator.itemgetter(1), reverse=True)
     sim = sim[:100]
@@ -496,40 +503,96 @@ def search_body_not_for_real(query, body_weight):
         res.append((id[0], body_weight*(id[1]/biggest_sim)))
     return res
 
+
+def search_body_25(query, body_weight_25):
+    b=0.75
+    k1=1.5
+    N=6348910
+    dic={}
+    res = []
+    for word in query:
+        posting_list=read_posting_list(index_body,word,'postings_gcp')
+        if len(posting_list)==0:
+            continue
+        df = index_body.df[word]
+        idf = math.log(1 + (N - df + 0.5) / (df + 0.5)+1)
+        for id_tf in posting_list:
+            try:
+                numerator = idf * (id_tf[1] * (k1 + 1))
+                denominator = id_tf[1] + k1 * (1 - b + (b * id_len[id_tf[0]] / 320))
+                score = numerator/denominator
+                if id_tf[0] in dic:
+                    dic[id_tf[0]] += score
+                else:
+                    dic[id_tf[0]] = score
+            except:
+                pass
+    dic = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
+    dic = dic[:100]
+    biggest_sim = dic[0][1]
+    for id in dic:
+        res.append((id[0], body_weight_25*(id[1]/biggest_sim)))
+
+    return res
+
 def search_title_not_for_real(query):
+
+    """
+    same as search_title but we can send the query
+    :param query:
+    :return:
+    """
     res = []
     if len(query) == 0:
         return res
     # BEGIN SOLUTION
 
-    post_list = get_posting_list(query, app.index_title, dir='/content/title_index')
+    post_list = get_posting_list(query, index_title, dir='title')
 
-    # with open(Path('/content/id_title_dict.pickle'), 'rb')as f:
-    #    app.id_title = pickle.loads(f.read())
-    res = map(lambda x: tuple((x[0],  id_title[x[0]])), post_list)
-    res = list(res)
 
-    # app.id_title.clear()
-    # END SOLUTION
+    try:
+        res = map(lambda x: tuple((x[0], id_title[x[0]])), post_list)
+        res = list(res)
+    except:
+        diffrent_res=[]
+        for id in post_list:
+            try:
+                diffrent_res.append((id[0],id_title[id[0]]))
+            except:
+                pass
+        res = diffrent_res
+
     return res
 
 
 def search_anchor_not_for_real(query):
+    """
+    same as search_anchor but we can send the query
+    :param query:
+    :return:
+    """
     res = []
     if len(query) == 0:
         return res
 
     # BEGIN SOLUTION
 
-    post_list = get_posting_list(query, app.index_anchor, dir='/content/anchor_index')
+    post_list = get_posting_list(query, index_anchor, dir='anchor')
 
-    # with open(Path('/content/id_title_dict.pickle'), 'rb')as f:
-    #    app.id_title = pickle.loads(f.read())
 
-    res = map(lambda x: tuple((x[0], id_title[x[0]])), post_list)
-    res = list(res)
+
+    try:
+        res = map(lambda x: tuple((x[0], id_title[x[0]])), post_list)
+        res = list(res)
+    except:
+        diffrent_res=[]
+        for id in post_list:
+            try:
+                diffrent_res.append((id[0],id_title[id[0]]))
+            except:
+                pass
+        res = diffrent_res
     # END SOLUTION
-    # app.id_title.clear()
 
     return res
 
@@ -553,52 +616,62 @@ def pv_for_life(wiki_ids, view_weight):
     if len(wiki_ids) == 0:
         return res
     # BEGIN SOLUTION
-    name = '/content/pv/' ####need to get this shit smaller
-    access_denied = [False for i in range(11)]
 
-    # for id in wiki_ids:
-    #     # res.append((id,wid2pv[id]))
-    #     if access_denied[hashing.index_hash(id)] == False:
-    #         app.id_PageView.update(hashing.get_dic(name, 'pv.pkl', id))
-    #         access_denied[hashing.index_hash(id)] = True
 
+
+    new_res = res
     for id in wiki_ids:
-        res.append((id,id_view[id])) ###### need to change it only to the int without the id
+        try:
+            res.append((id,id_view[id])) ###### need to change it only to the int without the id
+        except:
+            pass
 
-    res.sort(key=lambda x: x[1], reverse=True)
-    biggest_view = res[0][1]
-    new_res = []
-    for fix in res:
-        new_res.append((fix[0], view_weight*(fix[1]/biggest_view)))
-    # app.id_PageView.clear()
+    if(len(res)!=0):
+        res.sort(key=lambda x: x[1], reverse=True)
+        biggest_view = res[0][1]
+        new_res = []
+        for fix in res:
+            new_res.append((fix[0], view_weight*(fix[1]/biggest_view)))
     return new_res
 
 
 def pr_for_life(wiki_ids, rank_weight):
+    ''' Returns the number of page views that each of the provide wiki articles
+        had in August 2021.
+        Test this by issuing a POST request to a URL like:
+          http://YOUR_SERVER_DOMAIN/get_pageview
+        with a json payload of the list of article ids. In python do:
+          import requests
+          requests.post('http://YOUR_SERVER_DOMAIN/get_pageview', json=[1,5,8])
+        As before YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
+        if you're using ngrok on Colab or your external IP on GCP.
+    Returns:
+    --------
+        list of tuples: (id , rank)
+          list of page view numbers from August 2021 that correrspond to the
+    '''
     res = []
     if len(wiki_ids) == 0:
         return res
-    name = '/content/pr/' ####need to get this shit smaller
-    access_denied = [False for i in range(11)]
 
-    #
-    # for id in wiki_ids:
-    #     if access_denied[hashing.index_hash(id)] == False:
-    #         app.id_PageRank.update(hashing.get_dic(name , 'pr.pkl',id))
-    #         access_denied[hashing.index_hash(id)] = True
+    new_res = res
+
+
 
     for id in wiki_ids:
-        res.append((id, id_rank[id])) ###### need to change it only to the int without the id
+        try:
+            res.append((id, id_rank[id])) ###### need to change it only to the int without the id
+        except:
+            pass
 
+    if(len(res)!=0):
+        res.sort(key=lambda x: x[1], reverse=True)
 
-    res.sort(key=lambda x: x[1], reverse=True)
+        biggest_rank = res[0][1]
+        new_res = []
+        for fix in res:
+            new_res.append((fix[0], rank_weight*(fix[1]/biggest_rank)))
 
-    biggest_rank = res[0][1]
-    new_res = []
-    for fix in res:
-        new_res.append((fix[0], rank_weight*(fix[1]/biggest_rank)))
-
-    # app.id_PageRank.clear()
     return new_res
 
 
@@ -613,4 +686,4 @@ def update_final_search_dic(final, megazord):
 
 if __name__ == '__main__':
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=8080, debug=False)
